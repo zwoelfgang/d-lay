@@ -1,0 +1,6 @@
+make --dry-run --always-make --keep-going --print-directory
+make: Entering directory '/home/wolf/vst/d-lay'
+make: Leaving directory '/home/wolf/vst/d-lay'
+ 
+make: *** No targets specified and no makefile found.  Stop.
+
