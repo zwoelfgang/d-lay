@@ -196,20 +196,6 @@ void DLayAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     leftChain.process(leftContext);
     rightChain.process(rightContext);
 
-    double bpm = *getPosition()->getBpm();
-
-    if (bpm <= 0)
-    {
-        bpm = 130.0;
-    }
-
-    auto delayBufferSamples = getSampleRate() * (float)(bpm / 60.f);
-
-    delayBuffer.setSize (getTotalNumOutputChannels(), (int)(delayBufferSamples / freq));
-
-    auto bufferSize = buffer.getNumSamples();
-    auto delayBufferSize = delayBuffer.getNumSamples();
-
     // This is the place where you'd normally do the guts of your plugin's
     // audio processing...
     // Make sure to reset the state if your inner loop is processing
@@ -221,6 +207,19 @@ void DLayAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
         auto* channelData = buffer.getWritePointer (channel);
 
         // ..do something to the data...
+        double bpm = *getPosition()->getBpm();
+
+        if (bpm <= 0)
+        {
+            bpm = 130.0;
+        }
+
+        auto delayBufferSamples = getSampleRate() * (float)(bpm / 60.f);
+
+        delayBuffer.setSize (getTotalNumOutputChannels(), (int)(delayBufferSamples / freq));
+
+        auto bufferSize = buffer.getNumSamples();
+        auto delayBufferSize = delayBuffer.getNumSamples();
 
         if (delayBufferSize > bufferSize + writePosition)
         {
@@ -255,6 +254,8 @@ void DLayAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             buffer.addFromWithRamp (channel, numSamplesToEnd, delayBuffer.getReadPointer (channel, 0), numSamplesAtStart, gain, gain);
         }
     }
+
+    auto delayBufferSize = delayBuffer.getNumSamples();
 
     writePosition += buffer.getNumSamples();
     writePosition %= delayBufferSize;
