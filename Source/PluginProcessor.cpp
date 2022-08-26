@@ -237,7 +237,10 @@ void DLayAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
             delayBuffer.copyFromWithRamp (channel, 0, channelData + numSamplesToEnd, numSamplesAtStart, 0.1f, 0.1f);
         }
 
-        auto readPosition = writePosition - getSampleRate();
+        auto readPosition = writePosition - (getSampleRate() * (float)(bpm / 60.f));
+
+        if (readPosition < 0)
+            readPosition += delayBufferSize;
 
         if (readPosition + bufferSize < delayBufferSize)
         {
