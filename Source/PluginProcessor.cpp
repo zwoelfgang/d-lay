@@ -200,7 +200,7 @@ void DLayAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     position = playHead->getPosition();
     bpm = position->getBpm();
 
-    auto delayBufferSamples = getSampleRate() * (double)(*bpm / 60.f);
+    auto delayBufferSamples = getSampleRate() * (float)(*bpm / 60.f);
     delayBuffer.setSize (getTotalNumOutputChannels(), (int)(delayBufferSamples / freq));
 
     auto bufferSize = buffer.getNumSamples();
