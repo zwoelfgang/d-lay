@@ -10,6 +10,14 @@
 
 #include <JuceHeader.h>
 
+struct ChainSettings
+{
+  float lowCut{0};
+  float highCut{0};
+};
+
+ChainSettings getChainSettings(juce::AudioProcessorValueTreeState &state);
+
 //==============================================================================
 /**
 */
@@ -56,7 +64,31 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    juce::AudioProcessorValueTreeState& getState();
+
 private:
+    juce::AudioProcessorValueTreeState state;
+
+    juce::AudioPlayHead* playHead;
+    juce::Optional<juce::AudioPlayHead::PositionInfo> position;
+    juce::Optional<double> bpm;
+
+    float freq;
+    float highCut;
+    float lowCut;
+    float gain;
+
+    using Filter = juce::dsp::IIR::Filter<float>;
+    using CutFilter = juce::dsp::ProcessorChain<Filter, Filter>;
+    using MonoChain = juce::dsp::ProcessorChain<CutFilter, CutFilter>;
+    MonoChain leftChain, rightChain;
+
+    enum ChainPositions
+    {
+      LowCut,
+      HighCut,
+    };
+
     juce::AudioBuffer<float> delayBuffer;
     int writePosition = 0;
 

@@ -23,8 +23,17 @@ public:
     //==============================================================================
     void paint (juce::Graphics&) override;
     void resized() override;
-
 private:
+    juce::Slider freqKnob;
+    juce::Slider highCutKnob;
+    juce::Slider lowCutKnob;
+    juce::Slider gainKnob;
+
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> freqAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> highCutAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> lowCutAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> gainAttachment;
+
     // This reference is provided as a quick way for your editor to
     // access the processor object that created it.
     DLayAudioProcessor& audioProcessor;

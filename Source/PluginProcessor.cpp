@@ -11,16 +11,13 @@
 
 //==============================================================================
 DLayAudioProcessor::DLayAudioProcessor()
-#ifndef JucePlugin_PreferredChannelConfigurations
-     : AudioProcessor (BusesProperties()
-                     #if ! JucePlugin_IsMidiEffect
-                      #if ! JucePlugin_IsSynth
-                       .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
-                      #endif
-                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
-                     #endif
-                       )
-#endif
+    : state (*this, nullptr, "PARAMETERS",
+              { 
+                std::make_unique<juce::AudioParameterFloat> ("timing", "Timing", juce::NormalisableRange<float>(0.0625f, 1.f, 0.0625f), 0.125f),
+                std::make_unique<juce::AudioParameterFloat> ("low cut", "Low Cut", juce::NormalisableRange<float>(20.f, 20000.f, 1.f, 0.2f, false), 20.f),
+                std::make_unique<juce::AudioParameterFloat> ("high cut", "High Cut", juce::NormalisableRange<float>(20.f, 20000.f, 1.f, 0.2f, false), 20000.f),
+                std::make_unique<juce::AudioParameterFloat> ("gain", "Gain", juce::NormalisableRange<float>(0.1f, 1.f, 0.0001f), 0.5f)
+              })
 {
 }
 
@@ -95,8 +92,30 @@ void DLayAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     // Use this method as the place to do any pre-playback
     // initialisation that you need..
-    auto delayBufferSize = sampleRate * 2.0;
-    delayBuffer.setSize (getTotalNumOutputChannels(), (int)delayBufferSize);
+    juce::dsp::ProcessSpec spec;
+
+    spec.maximumBlockSize = samplesPerBlock;
+    spec.numChannels = 1;
+    spec.sampleRate = sampleRate;
+
+    leftChain.prepare(spec);
+    rightChain.prepare(spec);
+
+    auto chainSettings = getChainSettings(state);
+    auto lowCutCoefficients = juce::dsp::FilterDesign<float>::designIIRHighpassHighOrderButterworthMethod(chainSettings.lowCut, sampleRate, 4);
+    auto highCutCoefficients = juce::dsp::FilterDesign<float>::designIIRLowpassHighOrderButterworthMethod(chainSettings.highCut, sampleRate, 4);
+
+    auto& leftLowCut = leftChain.get<ChainPositions::LowCut>();
+    auto& rightLowCut = rightChain.get<ChainPositions::LowCut>();
+
+    leftLowCut.get<0>().coefficients = lowCutCoefficients[0];
+    rightLowCut.get<0>().coefficients = lowCutCoefficients[0];
+
+    auto& leftHighCut = leftChain.get<ChainPositions::HighCut>();
+    auto& rightHighCut = rightChain.get<ChainPositions::HighCut>();
+
+    leftHighCut.get<0>().coefficients = highCutCoefficients[0];
+    rightHighCut.get<0>().coefficients = highCutCoefficients[0];
 }
 
 void DLayAudioProcessor::releaseResources()
@@ -146,6 +165,44 @@ void DLayAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
+    freq = *state.getRawParameterValue("timing");
+    gain = *state.getRawParameterValue("gain");
+
+    auto chainSettings = getChainSettings(state);
+
+    auto lowCutCoefficients = juce::dsp::FilterDesign<float>::designIIRHighpassHighOrderButterworthMethod(chainSettings.lowCut, getSampleRate(), 4);
+    auto highCutCoefficients = juce::dsp::FilterDesign<float>::designIIRLowpassHighOrderButterworthMethod(chainSettings.highCut, getSampleRate(), 4);
+
+    auto& leftLowCut = leftChain.get<ChainPositions::LowCut>();
+    auto& rightLowCut = rightChain.get<ChainPositions::LowCut>();
+
+    leftLowCut.get<0>().coefficients = lowCutCoefficients[0];
+    rightLowCut.get<0>().coefficients = lowCutCoefficients[0];
+
+    auto& leftHighCut = leftChain.get<ChainPositions::HighCut>();
+    auto& rightHighCut = rightChain.get<ChainPositions::HighCut>();
+
+    leftHighCut.get<0>().coefficients = highCutCoefficients[0];
+    rightHighCut.get<0>().coefficients = highCutCoefficients[0];
+
+    juce::dsp::AudioBlock<float> block(buffer);
+
+    auto leftBlock = block.getSingleChannelBlock(0);
+    auto rightBlock = block.getSingleChannelBlock(1);
+
+    juce::dsp::ProcessContextReplacing<float> leftContext(leftBlock);
+    juce::dsp::ProcessContextReplacing<float> rightContext(rightBlock);
+
+    leftChain.process(leftContext);
+    rightChain.process(rightContext);
+
+    playHead = this->getPlayHead();
+    position = playHead->getPosition();
+    bpm = position->getBpm();
+
+    auto delayBufferSamples = getSampleRate() * (double)(*bpm / 60.f);
+    delayBuffer.setSize (getTotalNumOutputChannels(), (int)(delayBufferSamples / freq));
+
     auto bufferSize = buffer.getNumSamples();
     auto delayBufferSize = delayBuffer.getNumSamples();
 
@@ -178,25 +235,27 @@ void DLayAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
 
         auto readPosition = writePosition - getSampleRate();
 
-        if (readPosition < 0)
-            readPosition += delayBufferSize;
-
         if (readPosition + bufferSize < delayBufferSize)
         {
-            buffer.addFromWithRamp (channel, 0, delayBuffer.getReadPointer (channel, readPosition), bufferSize, 0.7f, 0.7f);
+            buffer.addFromWithRamp (channel, 0, delayBuffer.getReadPointer (channel, readPosition), bufferSize, gain, gain);
         }
         else
         {
             auto numSamplesToEnd = delayBufferSize - readPosition;
-            buffer.addFromWithRamp (channel, 0, delayBuffer.getReadPointer(channel, readPosition), numSamplesToEnd, 0.7f, 0.7f);
+            buffer.addFromWithRamp (channel, 0, delayBuffer.getReadPointer(channel, readPosition), numSamplesToEnd, gain, gain);
 
             auto numSamplesAtStart = bufferSize - numSamplesToEnd;
-            buffer.addFromWithRamp (channel, numSamplesToEnd, delayBuffer.getReadPointer (channel, 0), numSamplesAtStart, 0.7f, 0.7f);
+            buffer.addFromWithRamp (channel, numSamplesToEnd, delayBuffer.getReadPointer (channel, 0), numSamplesAtStart, gain, gain);
         }
     }
 
     writePosition += buffer.getNumSamples();
     writePosition %= delayBufferSize;
+}
+
+juce::AudioProcessorValueTreeState& DLayAudioProcessor::getState()
+{
+    return state;
 }
 
 //==============================================================================
@@ -216,12 +275,30 @@ void DLayAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
     // You should use this method to store your parameters in the memory block.
     // You could do that either as raw data, or use the XML or ValueTree classes
     // as intermediaries to make it easy to save and load complex data.
+    juce::MemoryOutputStream stream(destData, true);
+    state.state.writeToStream(stream);
 }
 
 void DLayAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     // You should use this method to restore your parameters from this memory block,
     // whose contents will have been created by the getStateInformation() call.
+    juce::ValueTree tree = juce::ValueTree::readFromData(data, sizeInBytes);
+
+    if (tree.isValid())
+    {
+        state.replaceState(tree);
+    }
+}
+
+ChainSettings getChainSettings(juce::AudioProcessorValueTreeState& state)
+{
+    ChainSettings settings;
+
+    settings.lowCut = state.getRawParameterValue("low cut")->load();
+    settings.highCut = state.getRawParameterValue("high cut")->load();
+
+    return settings;
 }
 
 //==============================================================================
