@@ -21,7 +21,8 @@ ChainSettings getChainSettings(juce::AudioProcessorValueTreeState &state);
 //==============================================================================
 /**
 */
-class DLayAudioProcessor  : public juce::AudioProcessor
+class DLayAudioProcessor  : public juce::AudioProcessor,
+                            public juce::AudioPlayHead
                             #if JucePlugin_Enable_ARA
                              , public juce::AudioProcessorARAExtension
                             #endif
@@ -63,6 +64,8 @@ public:
     //==============================================================================
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
+
+    juce::Optional<juce::AudioPlayHead::PositionInfo> getPosition() const override;
 
     juce::AudioProcessorValueTreeState& getState();
 

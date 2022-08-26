@@ -196,11 +196,15 @@ void DLayAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::M
     leftChain.process(leftContext);
     rightChain.process(rightContext);
 
-    playHead = this->getPlayHead();
-    position = playHead->getPosition();
-    bpm = position->getBpm();
+    double bpm = *getPosition()->getBpm();
 
-    auto delayBufferSamples = getSampleRate() * (float)(*bpm / 60.f);
+    if (bpm <= 0)
+    {
+        bpm = 130.0;
+    }
+
+    auto delayBufferSamples = getSampleRate() * (float)(bpm / 60.f);
+
     delayBuffer.setSize (getTotalNumOutputChannels(), (int)(delayBufferSamples / freq));
 
     auto bufferSize = buffer.getNumSamples();
@@ -299,6 +303,11 @@ ChainSettings getChainSettings(juce::AudioProcessorValueTreeState& state)
     settings.highCut = state.getRawParameterValue("high cut")->load();
 
     return settings;
+}
+
+juce::Optional<juce::AudioPlayHead::PositionInfo> DLayAudioProcessor::getPosition() const
+{
+    return getPlayHead()->getPosition();
 }
 
 //==============================================================================
